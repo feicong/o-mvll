@@ -4,18 +4,12 @@ on: push
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Get deployment version
-        id: versioning
-        run: |
-          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
-          LATEST_TAG="${LATEST_TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_TAG"
-          NEXT_VERSION="${MAJOR}-$((MINOR + 1))-0"
-          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
       - name: O-MVLL Android NDK r26d
         shell: bash
         run: |
@@ -29,30 +23,13 @@ jobs:
             -v ${{ github.workspace }}/dist/Python-3.10.7:/Python-3.10.7 \
             -v $GITHUB_WORKSPACE:/o-mvll \
             openobfuscator/omvll-build:latest bash /o-mvll/scripts/docker/ndk_r26_compile.sh
-      - name: Generate deployment tar
-        uses: a7ul/tar-action@v1.1.3
-        id: compress
+      - name: Upload NDK artifact to latest release
+        uses: softprops/action-gh-release@v2
         with:
-          command: c
-          cwd: ${{ github.workspace }}/dist/
+          tag_name: latest
+          name: Latest Build
+          prerelease: true
+          make_latest: true
           files: |
-            ./omvll-ndk.so
-            ./sample-omvll-config.py
-            ./Python-3.10.7
-          outPath: ${{ github.workspace }}/dist/omvll_v${{ steps.versioning.outputs.next_version }}_linux.tar.gz
-      - name: O-MVLL Deployment
-        env:
-          BUILD38_S3_KEY: ${{ secrets.BUILD38_S3_KEY }}
-          BUILD38_S3_SECRET: ${{ secrets.BUILD38_S3_SECRET }}
-        shell: bash
-        run: |
-          docker run \
-            -v $GITHUB_WORKSPACE:/o-mvll \
-            -e GITHUB_ACTIONS="true" \
-            -e GITHUB_WORKSPACE=$GITHUB_WORKSPACE \
-            -e GITHUB_REF=$GITHUB_REF \
-            -e GITHUB_REPOSITORY=$GITHUB_REPOSITORY \
-            -e BUILD38_S3_KEY=$BUILD38_S3_KEY \
-            -e BUILD38_S3_SECRET=$BUILD38_S3_SECRET \
-            --rm \
-            openobfuscator/deployment python3 /o-mvll/.github/scripts/s3-deploy.py
+            ${{ github.workspace }}/dist/omvll-ndk.so
+          overwrite_files: true
